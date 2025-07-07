@@ -73,10 +73,10 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Call SyncPair(Target, ws, "Negative",          "select_negative", wsNeg,"C","D")
     
     '── locate key columns once ────────────────────────────
-    Dim colWhere&, colGov&, colSet&
+    Dim colWhere&, colGov&, colSetGaza&
     colWhere = GetColByHeader(ws, "where")             'AD
     colGov   = GetColByHeader(ws, "governorate")       'AE
-    colSet   = GetColByHeader(ws, "settlement_gaza")   'AF
+    colSetGaza   = GetColByHeader(ws, "settlement_gaza")   'AF
     '–––––––– Governorate dropdown driven by “where” ––––––
     If colWhere > 0 And colGov > 0 Then
         Dim r As Range, loc$, list$, lastRow&, arr, i&
@@ -88,7 +88,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
                         .Validation.Delete
                         .ClearContents
                     End With
-                    With ws.Cells(r.Row, colSet)
+                    With ws.Cells(r.Row, colSetGaza)
                         .Validation.Delete
                         .ClearContents
                     End With
@@ -115,13 +115,13 @@ Private Sub Worksheet_Change(ByVal Target As Range)
         End If
     End If
     '–––––––– Settlement dropdown driven by governorate ––––––
-    If colGov > 0 And colSet > 0 Then
+    If colGov > 0 And colSetGaza > 0 Then
         Dim g As Range, gov$, listSet$, arrSet, j&, lastRowSet&
         If Not Intersect(Target, ws.Columns(colGov)) Is Nothing Then
             For Each g In Intersect(Target, ws.Columns(colGov))
                 If g.Row > 1 Then
                     gov = LCase(Trim(g.Value))
-                    With ws.Cells(g.Row, colSet)
+                    With ws.Cells(g.Row, colSetGaza)
                         .Validation.Delete
                         .ClearContents
                     End With
@@ -136,7 +136,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
                         Next j
                         If listSet <> "" Then
                             listSet = Left(listSet, Len(listSet) - 1)
-                            With ws.Cells(g.Row, colSet).Validation
+                            With ws.Cells(g.Row, colSetGaza).Validation
                                 .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
                                      Operator:=xlBetween, Formula1:=listSet
                                 .InCellDropdown = True
