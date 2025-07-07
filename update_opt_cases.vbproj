@@ -54,6 +54,38 @@ Sub SyncPair(ByVal Target As Range, _
     Next c
 End Sub
 
+
+'------------------------------------------------------------
+' Helper: Validate column values with regex
+'------------------------------------------------------------
+Sub ValidateColumnWithRegex(ws As Worksheet, Target As Range, headerName As String, pattern As String, msg As String)
+    Dim col As Long
+    col = GetColByHeader(ws, headerName)
+    If col = 0 Then Exit Sub
+
+    Dim r As Range
+    If Not Intersect(Target, ws.Columns(col)) Is Nothing Then
+        Dim regEx As Object
+        Set regEx = CreateObject("VBScript.RegExp")
+        regEx.Pattern = pattern
+        regEx.IgnoreCase = False
+        regEx.Global = False
+
+        For Each r In Intersect(Target, ws.Columns(col))
+            If r.Row > 1 Then
+                If Trim(r.Value) <> "" Then
+                    If Not regEx.Test(Trim(r.Value)) Then
+                        MsgBox "Row " & r.Row & ": " & msg, vbExclamation, "Invalid Entry"
+                        Application.EnableEvents = False
+                        r.ClearContents
+                        Application.EnableEvents = True
+                    End If
+                End If
+            End If
+        Next r
+    End If
+End Sub
+
 '------------------------------------------------------------
 ' Main worksheet event
 '------------------------------------------------------------
@@ -164,63 +196,13 @@ Private Sub Worksheet_Change(ByVal Target As Range)
         End If
     End If
 
-
     '–––––––– Regex validate "What_is_your_ID" ––––––––
-    Dim colID As Long
-    colID = GetColByHeader(ws, "What_is_your_ID")
-
-    If colID > 0 Then
-        Dim rID As Range
-        If Not Intersect(Target, ws.Columns(colID)) Is Nothing Then
-            Dim regEx As Object
-            Set regEx = CreateObject("VBScript.RegExp")
-            regEx.Pattern = "^\d{9}$"
-            regEx.IgnoreCase = False
-            regEx.Global = False
-
-            For Each rID In Intersect(Target, ws.Columns(colID))
-                If rID.Row > 1 Then
-                    If Trim(rID.Value) <> "" Then
-                        If Not regEx.Test(Trim(rID.Value)) Then
-                            MsgBox "Row " & rID.Row & ": 'What_is_your_ID' must be exactly 9 digits.", vbExclamation, "Invalid ID"
-                            Application.EnableEvents = False
-                            rID.ClearContents
-                            Application.EnableEvents = True
-                        End If
-                    End If
-                End If
-            Next rID
-        End If
-    End If
-
+    Call ValidateColumnWithRegex(ws, Target, "What_is_your_ID", "^\d{9}$", "'What_is_your_ID' must be exactly 9 digits.")
 
     '–––––––– Regex validate "What_is_your_phone_number" ––––––––
-    Dim colPH As Long
-    colPH = GetColByHeader(ws, "What_is_your_phone_number")
+    Call ValidateColumnWithRegex(ws, Target, "What_is_your_phone_number", "^\d{10}$", "'What_is_your_phone_number' must be exactly 10 digits.")
 
-    If colPH > 0 Then
-        Dim rPH As Range
-        If Not Intersect(Target, ws.Columns(colPH)) Is Nothing Then
-            Dim regExPH As Object
-            Set regExPH = CreateObject("VBScript.RegExp")
-            regExPH.Pattern = "^\d{10}$"
-            regExPH.IgnoreCase = False
-            regExPH.Global = False
 
-            For Each rPH In Intersect(Target, ws.Columns(colPH))
-                If rPH.Row > 1 Then
-                    If Trim(rPH.Value) <> "" Then
-                        If Not regExPH.Test(Trim(rPH.Value)) Then
-                            MsgBox "Row " & rPH.Row & ": 'What_is_your_phone_number' must be exactly 10 digits.", vbExclamation, "Invalid ID"
-                            Application.EnableEvents = False
-                            rPH.ClearContents
-                            Application.EnableEvents = True
-                        End If
-                    End If
-                End If
-            Next rPH
-        End If
-    End If
 
     Application.EnableEvents = True
 End Sub
