@@ -67,7 +67,7 @@ Sub ValidateColumnWithRegex(ws As Worksheet, Target As Range, headerName As Stri
     If Not Intersect(Target, ws.Columns(col)) Is Nothing Then
         Dim regEx As Object
         Set regEx = CreateObject("VBScript.RegExp")
-        regEx.Pattern = pattern
+        regEx.pattern = pattern
         regEx.IgnoreCase = False
         regEx.Global = False
 
@@ -79,6 +79,54 @@ Sub ValidateColumnWithRegex(ws As Worksheet, Target As Range, headerName As Stri
                         Application.EnableEvents = False
                         r.ClearContents
                         Application.EnableEvents = True
+                    End If
+                End If
+            End If
+        Next r
+    End If
+End Sub
+
+'------------------------------------------------------------
+' Helper: Set dynamic dropdown based on lookup
+'------------------------------------------------------------
+Sub SetDynamicDropdown(ws As Worksheet, Target As Range, _
+    triggerCol As Long, targetCol As Long, _
+    lookupSheet As Worksheet, lookupKeyColName As String, _
+    lookupValCol1 As String, lookupValCol2 As String, _
+    matchOnCol1 As Boolean)
+
+    Dim r As Range, key$, list$, lastRow&, arr, i&
+    If triggerCol = 0 Or targetCol = 0 Then Exit Sub
+    If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
+        For Each r In Intersect(Target, ws.Columns(triggerCol))
+            If r.Row > 1 Then
+                key = LCase(Trim(r.Value))
+                With ws.Cells(r.Row, targetCol)
+                    .Validation.Delete
+                    .ClearContents
+                End With
+                If key <> "" Then
+                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, GetColByHeader(lookupSheet, lookupKeyColName)).End(xlUp).Row
+                    arr = lookupSheet.Range(lookupValCol1 & "2:" & lookupValCol2 & lastRow).Value
+                    list = ""
+                    For i = 1 To UBound(arr, 1)
+                        If matchOnCol1 Then
+                            If LCase(Trim(arr(i, 1))) = key Then
+                                list = list & arr(i, 2) & ","
+                            End If
+                        Else
+                            If LCase(Trim(arr(i, 2))) = key Then
+                                list = list & arr(i, 1) & ","
+                            End If
+                        End If
+                    Next i
+                    If list <> "" Then
+                        list = Left(list, Len(list) - 1)
+                        With ws.Cells(r.Row, targetCol).Validation
+                            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+                                 Operator:=xlBetween, Formula1:=list
+                            .InCellDropdown = True
+                        End With
                     End If
                 End If
             End If
@@ -125,76 +173,25 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     colSetGaza = GetColByHeader(ws, "settlement_gaza") 'AF
 
     '–––––––– Governorate dropdown driven by “where” ––––––
-    If colWhere > 0 And colGov > 0 Then
-        Dim r As Range, loc$, list$, lastRow&, arr, i&
+    Call SetDynamicDropdown(ws, Target, colWhere, colGov, wsGov, "location", "D", "E", True)
+    ' Clear settlement_gaza as well when "where" changes
+    If colWhere > 0 And colSetGaza > 0 Then
         If Not Intersect(Target, ws.Columns(colWhere)) Is Nothing Then
+            Dim r As Range
             For Each r In Intersect(Target, ws.Columns(colWhere))
                 If r.Row > 1 Then
-                    loc = LCase(Trim(r.Value))
-                    With ws.Cells(r.Row, colGov)
-                        .Validation.Delete
-                        .ClearContents
-                    End With
                     With ws.Cells(r.Row, colSetGaza)
                         .Validation.Delete
                         .ClearContents
                     End With
-                    If loc <> "" Then
-                        lastRow = wsGov.Cells(wsGov.Rows.Count, GetColByHeader(wsGov, "location")).End(xlUp).Row
-                        arr = wsGov.Range("D2:E" & lastRow).Value     '2-D array
-                        list = ""
-                        For i = 1 To UBound(arr, 1)
-                            If LCase(Trim(arr(i, 1))) = loc Then
-                                list = list & arr(i, 2) & ","
-                            End If
-                        Next i
-                        If list <> "" Then
-                            list = Left(list, Len(list) - 1)
-                            With ws.Cells(r.Row, colGov).Validation
-                                .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
-                                     Operator:=xlBetween, Formula1:=list
-                                .InCellDropdown = True
-                            End With
-                        End If
-                    End If
                 End If
             Next r
         End If
     End If
 
     '–––––––– Settlement dropdown driven by governorate ––––––
-    If colGov > 0 And colSetGaza > 0 Then
-        Dim g As Range, gov$, listSet$, arrSet, j&, lastRowSet&
-        If Not Intersect(Target, ws.Columns(colGov)) Is Nothing Then
-            For Each g In Intersect(Target, ws.Columns(colGov))
-                If g.Row > 1 Then
-                    gov = LCase(Trim(g.Value))
-                    With ws.Cells(g.Row, colSetGaza)
-                        .Validation.Delete
-                        .ClearContents
-                    End With
-                    If gov <> "" Then
-                        lastRowSet = wsSetGaza.Cells(wsSetGaza.Rows.Count, GetColByHeader(wsSetGaza, "governorate_value")).End(xlUp).Row
-                        arrSet = wsSetGaza.Range("B2:C" & lastRowSet).Value  'B = Title, C = governorate_value
-                        listSet = ""
-                        For j = 1 To UBound(arrSet, 1)
-                            If LCase(Trim(arrSet(j, 2))) = gov Then
-                                listSet = listSet & arrSet(j, 1) & ","
-                            End If
-                        Next j
-                        If listSet <> "" Then
-                            listSet = Left(listSet, Len(listSet) - 1)
-                            With ws.Cells(g.Row, colSetGaza).Validation
-                                .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
-                                     Operator:=xlBetween, Formula1:=listSet
-                                .InCellDropdown = True
-                            End With
-                        End If
-                    End If
-                End If
-            Next g
-        End If
-    End If
+    Call SetDynamicDropdown(ws, Target, colGov, colSetGaza, wsSetGaza, "governorate_value", "B", "C", False)
+
 
     '–––––––– Regex validate "What_is_your_ID" ––––––––
     Call ValidateColumnWithRegex(ws, Target, "What_is_your_ID", "^\d{9}$", "'What_is_your_ID' must be exactly 9 digits.")
