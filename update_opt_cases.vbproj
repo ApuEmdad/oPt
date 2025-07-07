@@ -103,7 +103,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
                         .ClearContents
                     End With
                     If loc <> "" Then
-                        lastRow = wsGov.Cells(wsGov.Rows.Count, "D").End(xlUp).Row
+                        lastRow = wsGov.Cells(wsGov.Rows.Count, GetColByHeader(wsGov, "location")).End(xlUp).Row
                         arr = wsGov.Range("D2:E" & lastRow).Value     '2-D array
                         list = ""
                         For i = 1 To UBound(arr, 1)
@@ -138,7 +138,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
                     End With
                     If gov <> "" Then
                         lastRowSet = wsSetGaza.Cells(wsSetGaza.Rows.Count, GetColByHeader(wsSetGaza, "governorate_value")).End(xlUp).Row
-                        arrSet = wsSet.Range("B2:C" & lastRowSet).Value  'B = Title, C = governorate_value
+                        arrSet = wsSetGaza.Range("B2:C" & lastRowSet).Value  'B = Title, C = governorate_value
                         listSet = ""
                         For j = 1 To UBound(arrSet, 1)
                             If LCase(Trim(arrSet(j, 2))) = gov Then
