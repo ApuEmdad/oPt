@@ -1,0 +1,193 @@
+Option Explicit
+
+'------------------------------------------------------------
+' Helper: return column number for a given header (row 1)
+'------------------------------------------------------------
+Function GetColByHeader(ws As Worksheet, headerName As String) As Long
+    Dim c As Range
+    For Each c In ws.Rows(1).Cells
+        If Trim(LCase(c.Value)) = LCase(headerName) Then
+            GetColByHeader = c.Column
+            Exit Function
+        End If
+    Next c
+    GetColByHeader = 0                 'not found
+End Function
+
+'------------------------------------------------------------
+' Helper: sync src → dst (or dst → src) based on a two‑column table
+'------------------------------------------------------------
+Sub SyncPair(ByVal Target As Range, _
+             ws As Worksheet, _
+             srcHeader As String, dstHeader As String, _
+             lkSheet As Worksheet, fromHeader As String, toHeader As String)
+
+    Dim srcCol As Long, dstCol As Long
+    Dim fromCol As Long, toCol As Long
+    Dim hit As Range, c As Range, lastRow As Long, m As Variant
+
+    srcCol = GetColByHeader(ws, srcHeader)
+    dstCol = GetColByHeader(ws, dstHeader)
+    fromCol = GetColByHeader(lkSheet, fromHeader)
+    toCol   = GetColByHeader(lkSheet, toHeader)
+
+    If srcCol * dstCol * fromCol * toCol = 0 Then Exit Sub
+
+    Set hit = Intersect(Target, ws.Columns(srcCol))
+    If hit Is Nothing Then Exit Sub
+
+    lastRow = lkSheet.Cells(lkSheet.Rows.Count, fromCol).End(xlUp).Row
+
+    For Each c In hit
+        If c.Row > 1 Then
+            If Trim(c.Value) = "" Then
+                ws.Cells(c.Row, dstCol).ClearContents
+            Else
+                m = Application.Match(c.Value, _
+                        lkSheet.Range(lkSheet.Cells(2, fromCol), lkSheet.Cells(lastRow, fromCol)), 0)
+                If IsError(m) Then
+                    ws.Cells(c.Row, dstCol).ClearContents
+                Else
+                    ws.Cells(c.Row, dstCol).Value = lkSheet.Cells(m + 1, toCol).Value
+                End If
+            End If
+        End If
+    Next c
+End Sub
+
+'------------------------------------------------------------
+' SetDynamicDropdown:
+'   • keyCell          = cell that changed (parent value)
+'   • returnHeader     = header to place dropdown list in
+'   • lkSheet          = lookup sheet containing {key,value} columns
+'   • keyHeaderLookup  = header of key column in lookup sheet
+'   • valueHeaderLookup= header of value column in lookup sheet
+'   • extraClearHeaders() = optional list of other headers to clear
+'------------------------------------------------------------
+Sub SetDynamicDropdown(wsTgt As Worksheet, _
+                       keyCell As Range, _
+                       returnHeader As String, _
+                       lkSheet As Worksheet, _
+                       keyHeaderLookup As String, _
+                       valueHeaderLookup As String, _
+                       ParamArray extraClearHeaders() As Variant)
+
+    If keyCell Is Nothing Then Exit Sub
+    If keyCell.Row <= 1 Then Exit Sub   'skip header row
+
+    Dim retCol As Long: retCol = GetColByHeader(wsTgt, returnHeader)
+    Dim keyColLk As Long: keyColLk = GetColByHeader(lkSheet, keyHeaderLookup)
+    Dim valColLk As Long: valColLk = GetColByHeader(lkSheet, valueHeaderLookup)
+    If retCol * keyColLk * valColLk = 0 Then Exit Sub
+
+    '--- clear target & extra columns -----------------------
+    With wsTgt.Cells(keyCell.Row, retCol)
+        .Validation.Delete
+        .ClearContents
+    End With
+
+    Dim h
+    For Each h In extraClearHeaders
+        Dim ec As Long: ec = GetColByHeader(wsTgt, CStr(h))
+        If ec > 0 Then
+            With wsTgt.Cells(keyCell.Row, ec)
+                .Validation.Delete
+                .ClearContents
+            End With
+        End If
+    Next h
+
+    '--- build list if parent key not blank ----------------
+    Dim keyVal As String: keyVal = LCase(Trim(keyCell.Value))
+    If keyVal = "" Then Exit Sub
+
+    Dim lastRow As Long
+    lastRow = lkSheet.Cells(lkSheet.Rows.Count, keyColLk).End(xlUp).Row
+
+    Dim arr, i As Long, listStr As String
+    arr = lkSheet.Range(lkSheet.Cells(2, keyColLk), lkSheet.Cells(lastRow, valColLk)).Value
+
+    For i = 1 To UBound(arr, 1)
+        If LCase(Trim(arr(i, 1))) = keyVal Then
+            listStr = listStr & arr(i, 2) & ","
+        End If
+    Next i
+
+    If listStr <> "" Then
+        listStr = Left(listStr, Len(listStr) - 1)   'drop trailing comma
+        With wsTgt.Cells(keyCell.Row, retCol).Validation
+            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+                 Operator:=xlBetween, Formula1:=listStr
+            .InCellDropdown = True
+        End With
+    End If
+End Sub
+
+'------------------------------------------------------------
+' Main worksheet event
+'------------------------------------------------------------
+Private Sub Worksheet_Change(ByVal Target As Range)
+    Dim ws As Worksheet:      Set ws = Me
+    Dim wsCat As Worksheet:   Set wsCat   = Sheets("Categories")
+    Dim wsAssist As Worksheet:Set wsAssist= Sheets("Assistance Type")
+    Dim wsBreach As Worksheet:Set wsBreach= Sheets("Breaches")
+    Dim wsNeg As Worksheet:   Set wsNeg   = Sheets("Negative")
+    Dim wsGov As Worksheet:   Set wsGov   = Sheets("Governorates")
+    Dim wsSetGaza As Worksheet:Set wsSetGaza = Sheets("settlements_gaza")
+
+    Application.EnableEvents = False   'prevent recursion
+
+    '-- two-way label ? name syncing ------------------------
+    Call SyncPair(Target, ws, "select_categories", "categories", wsCat, "label", "name")
+    Call SyncPair(Target, ws, "categories", "select_categories", wsCat, "name", "label")
+
+    Call SyncPair(Target, ws, "select_assistance", "assistance_types", wsAssist, "label", "name")
+    Call SyncPair(Target, ws, "assistance_types", "select_assistance", wsAssist, "name", "label")
+
+    Call SyncPair(Target, ws, "select_breaches", "Breaches", wsBreach, "label", "name")
+    Call SyncPair(Target, ws, "Breaches", "select_breaches", wsBreach, "name", "label")
+
+    Call SyncPair(Target, ws, "select_negative", "Negative", wsNeg, "label", "name")
+    Call SyncPair(Target, ws, "Negative", "select_negative", wsNeg, "name", "label")
+
+    '-- locate key columns once ----------------------------
+    Dim colWhere As Long, colGov As Long, colSetGaza As Long
+    colWhere    = GetColByHeader(ws, "where")           'AD
+    colGov      = GetColByHeader(ws, "governorate")     'AE
+    colSetGaza  = GetColByHeader(ws, "settlement_gaza") 'AF
+
+    '––– Governorate dropdown (parent = where) ––––––––––––
+    If colWhere > 0 Then
+        Dim rngWhere As Range
+        Set rngWhere = Intersect(Target, ws.Columns(colWhere))
+        If Not rngWhere Is Nothing Then
+            Dim cell As Range
+            For Each cell In rngWhere
+                Call SetDynamicDropdown (ws, cell, _
+                    "governorate", _
+                    wsGov, _
+                    "location", _
+                    "Governorate", _
+                    "settlement_gaza" )     'extra column to clear
+            Next cell
+        End If
+    End If
+
+    '––– Settlement dropdown (parent = governorate) –––––––
+    If colGov > 0 Then
+        Dim rngGov As Range
+        Set rngGov = Intersect(Target, ws.Columns(colGov))
+        If Not rngGov Is Nothing Then
+            Dim g As Range
+            For Each g In rngGov
+                SetDynamicDropdown ws, g, _
+                    "settlement_gaza", _
+                    wsSetGaza, _
+                    "governorate_value", _
+                    "Title"                 'no extras to clear
+            Next g
+        End If
+    End If
+
+    Application.EnableEvents = True
+End Sub
