@@ -1,0 +1,161 @@
+' === Helper: Get column number by header text ===
+' This function finds the column number based on the header name in the first row
+Function GetColByHeader(ws As Worksheet, headerName As String) As Long
+    Dim c As Range
+
+    ' Loop through each cell in the first row
+    For Each c In ws.Rows(1).Cells
+        ' Check if the cell matches the header we're looking for (case-insensitive, ignores spaces)
+        If Trim(LCase(c.Value)) = LCase(headerName) Then
+            GetColByHeader = c.Column  ' Return the column number
+            Exit Function              ' Stop the loop once found
+        End If
+    Next c
+
+    GetColByHeader = 0  ' Return 0 if the header name was not found
+End Function
+
+' === Helper: Sync one column to another based on lookup table ===
+' This subroutine updates the destination column based on what is entered in the source column,
+' using a lookup table from another worksheet.
+
+Sub SyncPair(ByVal Target As Range, ws As Worksheet, _
+             sourceHeader As String, destHeader As String, _
+             lookupSheet As Worksheet, lookupFromCol As String, lookupToCol As String)
+
+    Dim sourceCol As Long, destCol As Long
+    Dim changedCell As Range
+    Dim selectedValue As String
+    Dim matchResult As Variant
+    Dim lastRow As Long
+
+    ' Get the actual column numbers of the source and destination headers from the sheet
+    sourceCol = GetColByHeader(ws, sourceHeader)
+    destCol = GetColByHeader(ws, destHeader)
+    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, lookupFromCol).End(xlUp).Row
+
+    ' If either header is not found, exit early
+    If sourceCol = 0 Or destCol = 0 Then Exit Sub
+
+    ' Check if the change happened in the source column
+    If Not Intersect(Target, ws.Columns(sourceCol)) Is Nothing Then
+
+        ' Loop through each changed cell in the source column
+        For Each changedCell In Intersect(Target, ws.Columns(sourceCol)).Cells
+            ' Ignore header row (row 1)
+            If changedCell.Row > 1 Then
+
+                ' Store the value entered by the user
+                selectedValue = changedCell.Value
+
+                ' If the cell was cleared, also clear the destination cell
+                If selectedValue = "" Then
+                    ws.Cells(changedCell.Row, destCol).Value = ""
+
+                ' Otherwise, try to match it in the lookup table
+                Else
+                    ' Perform the lookup in the lookupFromCol (e.g., D) in the given lookup sheet
+                    ' matchResult = Application.Match(selectedValue, lookupSheet.Range(lookupFromCol & "2:" & lookupFromCol & "1000"), 0)
+                    matchResult = Application.Match(selectedValue, lookupSheet.Range(lookupFromCol & "2:" & lookupFromCol & lastRow), 0)
+
+                    ' If a match is found, get the corresponding value from lookupToCol (e.g., C)
+                    If Not IsError(matchResult) Then
+                        ws.Cells(changedCell.Row, destCol).Value = lookupSheet.Cells(matchResult + 1, lookupToCol).Value
+
+                    ' If no match is found, clear the destination cell
+                    Else
+                        ws.Cells(changedCell.Row, destCol).Value = ""
+                    End If
+                End If
+            End If
+        Next changedCell
+    End If
+End Sub
+
+
+' === Main change handler ===
+Private Sub Worksheet_Change(ByVal Target As Range)
+    Dim wsCat As Worksheet, wsAssist As Worksheet, wsBreach As Worksheet, wsNeg As Worksheet
+    Dim wsGov As Worksheet, ws As Worksheet
+    Dim c As Range, rngGov As Range
+    Dim loc As String, listStr As String
+    Dim arrGov() As Variant
+    Dim i As Long
+
+    Set wsCat = ThisWorkbook.Sheets("Categories")
+    Set wsAssist = ThisWorkbook.Sheets("Assistance Type")
+    Set wsBreach = ThisWorkbook.Sheets("Breaches")
+    Set wsNeg = ThisWorkbook.Sheets("Negative")
+    Set ws = Me
+    Set wsGov = ThisWorkbook.Sheets("Governorates")
+
+    Application.EnableEvents = False
+
+    ' === Sync dropdown label-value pairs ===
+    Call SyncPair(Target, ws, "select_categories", "categories", wsCat, "D", "C")
+    Call SyncPair(Target, ws, "categories", "select_categories", wsCat, "C", "D")
+
+    Call SyncPair(Target, ws, "select_assistance", "assistance_types", wsAssist, "D", "C")
+    Call SyncPair(Target, ws, "assistance_types", "select_assistance", wsAssist, "C", "D")
+
+    Call SyncPair(Target, ws, "select_breaches", "Breaches", wsBreach, "D", "C")
+    Call SyncPair(Target, ws, "Breaches", "select_breaches", wsBreach, "C", "D")
+
+    Call SyncPair(Target, ws, "select_negative", "Negative", wsNeg, "D", "C")
+    Call SyncPair(Target, ws, "Negative", "select_negative", wsNeg, "C", "D")
+
+    ' === Handle governorates dynamic validation based on location column ===
+    
+    Dim whereCol As Long, govCol As Long
+    whereCol = GetColByHeader(Me, "where")
+    govCol = GetColByHeader(Me, "governorate")
+    
+    If whereCol = 0 Or govCol = 0 Then Exit Sub ' Exit if headers not found
+    
+    If Not Intersect(Target, Me.Columns(whereCol)) Is Nothing Then
+        For Each c In Intersect(Target, Me.Columns(whereCol)).Cells
+            If c.Row > 1 Then ' ? Skip header row
+                loc = Trim(LCase(c.Value))
+    
+                With Me.Cells(c.Row, govCol)
+                    .Validation.Delete
+                    .ClearContents
+                End With
+    
+                If loc <> "" Then
+                    With wsGov
+                        Dim lastRow As Long
+                        lastRow = .Cells(.Rows.Count, "D").End(xlUp).Row
+                        arrGov = .Range("D2:E" & lastRow).Value
+                    End With
+    
+                    listStr = ""
+                    For i = 1 To UBound(arrGov, 1)
+                        If LCase(Trim(arrGov(i, 1))) = loc Then
+                            listStr = listStr & arrGov(i, 2) & ","
+                        End If
+                    Next i
+    
+                    If listStr <> "" Then
+                        listStr = Left(listStr, Len(listStr) - 1)
+                        With Me.Cells(c.Row, govCol).Validation
+                            .Delete
+                            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:= _
+                                xlBetween, Formula1:=listStr
+                            .IgnoreBlank = True
+                            .InCellDropdown = True
+                            .ShowInput = True
+                            .ShowError = True
+                        End With
+                    End If
+                End If
+            End If
+        Next c
+    End If
+
+
+
+    Application.EnableEvents = True
+End Sub
+
+
