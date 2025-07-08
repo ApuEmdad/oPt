@@ -187,9 +187,9 @@ Private Sub Worksheet_Change(ByVal Target As Range)
 
     '-- locate key columns once ----------------------------
     Dim colWhere&, colGov&, colSetGaza&
-    colWhere = GetColByHeader(ws, "where")             'AD
-    colGov = GetColByHeader(ws, "governorate")         'AE
-    colSetGaza = GetColByHeader(ws, "settlement_gaza") 'AF
+    colWhere = GetColByHeader(ws, "where")             'AE
+    colGov = GetColByHeader(ws, "governorate")         'AF
+    colSetGaza = GetColByHeader(ws, "settlement_gaza") 'AG
 
     '–––––––– Governorate dropdown driven by “where” ––––––
     Call SetDynamicDropdown(ws, Target, colWhere, colGov, wsGov, "location", "location", "name", True)
