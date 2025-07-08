@@ -92,31 +92,44 @@ End Sub
 Sub SetDynamicDropdown(ws As Worksheet, Target As Range, _
     triggerCol As Long, targetCol As Long, _
     lookupSheet As Worksheet, lookupKeyColName As String, _
-    lookupValCol1 As String, lookupValCol2 As String, _
+    lookupValColName1 As String, lookupValColName2 As String, _
     matchOnCol1 As Boolean)
 
-    Dim r As Range, key$, list$, lastRow&, arr, i&
+    Dim r As Range, key$, list$, lastRow As Long, i As Long
+    Dim keyColNum As Long, valColNum1 As Long, valColNum2 As Long
     If triggerCol = 0 Or targetCol = 0 Then Exit Sub
+
+    ' Get actual column numbers for lookup columns based on header names
+    keyColNum = GetColByHeader(lookupSheet, lookupKeyColName)
+    valColNum1 = GetColByHeader(lookupSheet, lookupValColName1)
+    valColNum2 = GetColByHeader(lookupSheet, lookupValColName2)
+
+    If keyColNum = 0 Or valColNum1 = 0 Or valColNum2 = 0 Then Exit Sub
+
     If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
         For Each r In Intersect(Target, ws.Columns(triggerCol))
             If r.Row > 1 Then
-                key = LCase(Trim(r.Value))
+                key = Trim(r.Value)
                 With ws.Cells(r.Row, targetCol)
                     .Validation.Delete
                     .ClearContents
                 End With
                 If key <> "" Then
-                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, GetColByHeader(lookupSheet, lookupKeyColName)).End(xlUp).Row
-                    arr = lookupSheet.Range(lookupValCol1 & "2:" & lookupValCol2 & lastRow).Value
+                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, keyColNum).End(xlUp).Row
                     list = ""
-                    For i = 1 To UBound(arr, 1)
+                    For i = 2 To lastRow
+                        Dim kVal As String, v1 As String, v2 As String
+                        kVal = Trim(lookupSheet.Cells(i, keyColNum).Value)
+                        v1 = Trim(lookupSheet.Cells(i, valColNum1).Value)
+                        v2 = Trim(lookupSheet.Cells(i, valColNum2).Value)
+
                         If matchOnCol1 Then
-                            If LCase(Trim(arr(i, 1))) = key Then
-                                list = list & arr(i, 2) & ","
+                            If StrComp(kVal, key, vbTextCompare) = 0 Then
+                                list = list & v2 & ","
                             End If
                         Else
-                            If LCase(Trim(arr(i, 2))) = key Then
-                                list = list & arr(i, 1) & ","
+                            If StrComp(v2, key, vbTextCompare) = 0 Then
+                                list = list & v1 & ","
                             End If
                         End If
                     Next i
@@ -133,6 +146,8 @@ Sub SetDynamicDropdown(ws As Worksheet, Target As Range, _
         Next r
     End If
 End Sub
+
+
 
 '------------------------------------------------------------
 ' Main worksheet event
@@ -177,11 +192,12 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     colSetGaza = GetColByHeader(ws, "settlement_gaza") 'AF
 
     '–––––––– Governorate dropdown driven by “where” ––––––
-    Call SetDynamicDropdown(ws, Target, colWhere, colGov, wsGov, "location", "D", "E", True)
+    Call SetDynamicDropdown(ws, Target, colWhere, colGov, wsGov, "location", "location", "name", True)
+
     ' Clear settlement_gaza as well when "where" changes
     If colWhere > 0 And colSetGaza > 0 Then
+        Dim r As Range
         If Not Intersect(Target, ws.Columns(colWhere)) Is Nothing Then
-            Dim r As Range
             For Each r In Intersect(Target, ws.Columns(colWhere))
                 If r.Row > 1 Then
                     With ws.Cells(r.Row, colSetGaza)
@@ -194,8 +210,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     End If
 
     '–––––––– Settlement dropdown driven by governorate ––––––
-    Call SetDynamicDropdown(ws, Target, colGov, colSetGaza, wsSetGaza, "governorate_value", "B", "C", False)
-
+    Call SetDynamicDropdown(ws, Target, colGov, colSetGaza, wsSetGaza, "governorate_value", "Title", "governorate_value", False)
 
     '–––––––– Regex validate "What_is_your_ID" ––––––––
     Call ValidateColumnWithRegex(ws, Target, "What_is_your_ID", "^\d{9}$", "'What_is_your_ID' must be exactly 9 digits.")
@@ -203,11 +218,5 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     '–––––––– Regex validate "What_is_your_phone_number" ––––––––
     Call ValidateColumnWithRegex(ws, Target, "What_is_your_phone_number", "^\d{10}$", "'What_is_your_phone_number' must be exactly 10 digits.")
 
-
-
     Application.EnableEvents = True
 End Sub
-
-
-
-
