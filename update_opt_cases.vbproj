@@ -141,6 +141,7 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Dim ws As Worksheet:      Set ws = Me
     Dim wsCat As Worksheet:   Set wsCat = ThisWorkbook.Sheets("Categories")
     Dim wsAssist As Worksheet: Set wsAssist = ThisWorkbook.Sheets("Assistance Type")
+    Dim wsFeedback As Worksheet: Set wsFeedback = ThisWorkbook.Sheets("Feedback")
     Dim wsBreach As Worksheet: Set wsBreach = ThisWorkbook.Sheets("Breaches")
     Dim wsNeg As Worksheet:   Set wsNeg = ThisWorkbook.Sheets("Negative")
     Dim wsSubCat As Worksheet:   Set wsSubCat = ThisWorkbook.Sheets("sub_categories")
@@ -156,6 +157,9 @@ Private Sub Worksheet_Change(ByVal Target As Range)
 
     Call SyncPair(Target, ws, "select_assistance", "assistance_types", wsAssist, "label", "name")
     Call SyncPair(Target, ws, "assistance_types", "select_assistance", wsAssist, "name", "label")
+
+    Call SyncPair(Target, ws, "select_feedback", "feedback", wsFeedback, "label", "name")
+    Call SyncPair(Target, ws, "feedback", "select_feedback", wsFeedback, "name", "label")
 
     Call SyncPair(Target, ws, "select_breaches", "Breaches", wsBreach, "label", "name")
     Call SyncPair(Target, ws, "Breaches", "select_breaches", wsBreach, "name", "label")
