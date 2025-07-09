@@ -54,7 +54,6 @@ Sub SyncPair(ByVal Target As Range, _
     Next c
 End Sub
 
-
 '------------------------------------------------------------
 ' Helper: Validate column values with regex
 '------------------------------------------------------------
@@ -147,6 +146,95 @@ Sub SetDynamicDropdown(ws As Worksheet, Target As Range, _
     End If
 End Sub
 
+'------------------------------------------------------------
+' Helper: Set dropdown for Sector and Focal Point
+'------------------------------------------------------------
+
+Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
+    triggerCol As Long, targetCol As Long, _
+    lookupSheet As Worksheet, filterColName As String, resultColName As String, _
+    helperSheetName As String, helperStartCell As String)
+
+    Dim r As Range, key As String
+    Dim filterCol As Long, resultCol As Long
+    Dim lastRow As Long, i As Long
+    Dim helperWS As Worksheet
+    Dim outputRow As Long
+    Dim helperStartRow As Long, helperStartCol As Long
+    Dim baseRowOffset As Long, currentHelperStartRow As Long
+    Dim maxItemsPerList As Long
+
+    filterCol = GetColByHeader(lookupSheet, filterColName)
+    resultCol = GetColByHeader(lookupSheet, resultColName)
+    If filterCol = 0 Or resultCol = 0 Then Exit Sub
+
+    On Error Resume Next
+    Set helperWS = ThisWorkbook.Sheets(helperSheetName)
+    On Error GoTo 0
+    If helperWS Is Nothing Then
+        MsgBox "Helper sheet '" & helperSheetName & "' not found.", vbCritical
+        Exit Sub
+    End If
+
+    ' Parse helper start cell to row and col
+    helperStartRow = helperWS.Range(helperStartCell).Row
+    helperStartCol = helperWS.Range(helperStartCell).Column
+
+    maxItemsPerList = 50  ' maximum expected filtered items per dropdown
+
+    If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
+        For Each r In Intersect(Target, ws.Columns(triggerCol))
+            If r.Row > 1 Then
+                key = Trim(r.Value)
+
+                ' Calculate unique helper start row for this data validation
+                ' E.g. for row 2: helperStartRow + (2 - 2)*maxItemsPerList = helperStartRow
+                ' for row 3: helperStartRow + (3 - 2)*maxItemsPerList, etc.
+                baseRowOffset = (r.Row - 2) * maxItemsPerList
+                currentHelperStartRow = helperStartRow + baseRowOffset
+
+                ' Clear existing validation and content in target cell
+                With ws.Cells(r.Row, targetCol)
+                    .Validation.Delete
+                    .ClearContents
+                End With
+
+                ' Clear previous helper range for this row
+                helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
+                               helperWS.Cells(currentHelperStartRow + maxItemsPerList - 1, helperStartCol)).ClearContents
+
+                If key <> "" Then
+                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, filterCol).End(xlUp).Row
+                    outputRow = currentHelperStartRow
+
+                    ' Write filtered names to helper sheet column
+                    For i = 2 To lastRow
+                        If StrComp(Trim(lookupSheet.Cells(i, filterCol).Value), key, vbTextCompare) = 0 Then
+                            helperWS.Cells(outputRow, helperStartCol).Value = lookupSheet.Cells(i, resultCol).Value
+                            outputRow = outputRow + 1
+                        End If
+                    Next i
+
+                    If outputRow > currentHelperStartRow Then
+                        ' Define the range of the list in helper sheet
+                        Dim listRange As String
+                        listRange = helperWS.Name & "!" & _
+                                    helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
+                                                  helperWS.Cells(outputRow - 1, helperStartCol)).Address(False, False)
+
+                        ' Add validation referring to helper list range
+                        With ws.Cells(r.Row, targetCol).Validation
+                            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+                                 Operator:=xlBetween, Formula1:="=" & listRange
+                            .InCellDropdown = True
+                        End With
+                    End If
+                End If
+            End If
+        Next r
+    End If
+End Sub
+
 
 
 '------------------------------------------------------------
@@ -160,11 +248,13 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Dim wsBreach As Worksheet: Set wsBreach = ThisWorkbook.Sheets("Breaches")
     Dim wsNeg As Worksheet:   Set wsNeg = ThisWorkbook.Sheets("Negative")
     Dim wsSubCat As Worksheet:   Set wsSubCat = ThisWorkbook.Sheets("sub_categories")
-    
+
     Dim wsGov As Worksheet:   Set wsGov = ThisWorkbook.Sheets("Governorates")
     Dim wsSetGaza As Worksheet:   Set wsSetGaza = ThisWorkbook.Sheets("settlements_gaza")
+    Dim wsFocal As Worksheet: Set wsFocal = ThisWorkbook.Sheets("focal_point")
 
     Application.EnableEvents = False     'prevent recursion
+
 
     '-- two-way label ? name syncing ------------------------
     Call SyncPair(Target, ws, "select_categories", "categories", wsCat, "label", "name")
@@ -186,10 +276,12 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Call SyncPair(Target, ws, "sub_categories", "select_sub_categories", wsSubCat, "name", "label")
 
     '-- locate key columns once ----------------------------
-    Dim colWhere&, colGov&, colSetGaza&
-    colWhere = GetColByHeader(ws, "where")             'AE
-    colGov = GetColByHeader(ws, "governorate")         'AF
-    colSetGaza = GetColByHeader(ws, "settlement_gaza") 'AG
+    Dim colWhere&, colGov&, colSetGaza&, colSector&, colFocalPoint&
+    colWhere = GetColByHeader(ws, "where")
+    colGov = GetColByHeader(ws, "governorate")
+    colSetGaza = GetColByHeader(ws, "settlement_gaza")
+    colSector = GetColByHeader(ws, "Sector")
+    colFocalPoint = GetColByHeader(ws, "Focal Point")
 
     '–––––––– Governorate dropdown driven by “where” ––––––
     Call SetDynamicDropdown(ws, Target, colWhere, colGov, wsGov, "location", "location", "name", True)
@@ -212,9 +304,13 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     '–––––––– Settlement dropdown driven by governorate ––––––
     Call SetDynamicDropdown(ws, Target, colGov, colSetGaza, wsSetGaza, "governorate_value", "Title", "governorate_value", False)
 
+    '-- NEW: Set dropdown for Focal Point based on Sector
+    Call SetDropdownFromFilteredRange(ws, Target, colSector, colFocalPoint, wsFocal, "Sector", "Focal Point", "Helper", "A1")
+
+
     '–––––––– Regex validate "What_is_your_ID" ––––––––
     Call ValidateColumnWithRegex(ws, Target, "What_is_your_ID", "^\d{9}$", "'What_is_your_ID' must be exactly 9 digits.")
-
+    
     '–––––––– Regex validate "What_is_your_phone_number" ––––––––
     Call ValidateColumnWithRegex(ws, Target, "What_is_your_phone_number", "^\d{10}$", "'What_is_your_phone_number' must be exactly 10 digits.")
 

@@ -15,7 +15,7 @@ Function GetColByHeader(ws As Worksheet, headerName As String) As Long
 End Function
 
 '------------------------------------------------------------
-' Helper: sync src → dst (or dst → src) based on a two‑column table
+' Helper: sync src ? dst (or dst ? src) based on a two-column table
 '------------------------------------------------------------
 Sub SyncPair(ByVal Target As Range, _
              ws As Worksheet, _
@@ -29,9 +29,9 @@ Sub SyncPair(ByVal Target As Range, _
     srcCol = GetColByHeader(ws, srcHeader)
     dstCol = GetColByHeader(ws, dstHeader)
     fromCol = GetColByHeader(lkSheet, fromHeader)
-    toCol   = GetColByHeader(lkSheet, toHeader)
+    toCol = GetColByHeader(lkSheet, toHeader)
 
-    If srcCol * dstCol * fromCol * toCol = 0 Then Exit Sub
+    If srcCol = 0 Or dstCol = 0 Or fromCol = 0 Or toCol = 0 Then Exit Sub
 
     Set hit = Intersect(Target, ws.Columns(srcCol))
     If hit Is Nothing Then Exit Sub
@@ -43,8 +43,7 @@ Sub SyncPair(ByVal Target As Range, _
             If Trim(c.Value) = "" Then
                 ws.Cells(c.Row, dstCol).ClearContents
             Else
-                m = Application.Match(c.Value, _
-                        lkSheet.Range(lkSheet.Cells(2, fromCol), lkSheet.Cells(lastRow, fromCol)), 0)
+                m = Application.Match(c.Value, lkSheet.Range(lkSheet.Cells(2, fromCol), lkSheet.Cells(lastRow, fromCol)), 0)
                 If IsError(m) Then
                     ws.Cells(c.Row, dstCol).ClearContents
                 Else
@@ -56,86 +55,206 @@ Sub SyncPair(ByVal Target As Range, _
 End Sub
 
 '------------------------------------------------------------
-' SetDynamicDropdown:
-'   • keyCell          = cell that changed (parent value)
-'   • returnHeader     = header to place dropdown list in
-'   • lkSheet          = lookup sheet containing {key,value} columns
-'   • keyHeaderLookup  = header of key column in lookup sheet
-'   • valueHeaderLookup= header of value column in lookup sheet
-'   • extraClearHeaders() = optional list of other headers to clear
+' Helper: Validate column values with regex
 '------------------------------------------------------------
-Sub SetDynamicDropdown(wsTgt As Worksheet, _
-                       keyCell As Range, _
-                       returnHeader As String, _
-                       lkSheet As Worksheet, _
-                       keyHeaderLookup As String, _
-                       valueHeaderLookup As String, _
-                       ParamArray extraClearHeaders() As Variant)
+Sub ValidateColumnWithRegex(ws As Worksheet, Target As Range, headerName As String, pattern As String, msg As String)
+    Dim col As Long
+    col = GetColByHeader(ws, headerName)
+    If col = 0 Then Exit Sub
 
-    If keyCell Is Nothing Then Exit Sub
-    If keyCell.Row <= 1 Then Exit Sub   'skip header row
+    Dim r As Range
+    If Not Intersect(Target, ws.Columns(col)) Is Nothing Then
+        Dim regEx As Object
+        Set regEx = CreateObject("VBScript.RegExp")
+        regEx.pattern = pattern
+        regEx.IgnoreCase = False
+        regEx.Global = False
 
-    Dim retCol As Long: retCol = GetColByHeader(wsTgt, returnHeader)
-    Dim keyColLk As Long: keyColLk = GetColByHeader(lkSheet, keyHeaderLookup)
-    Dim valColLk As Long: valColLk = GetColByHeader(lkSheet, valueHeaderLookup)
-    If retCol * keyColLk * valColLk = 0 Then Exit Sub
-
-    '--- clear target & extra columns -----------------------
-    With wsTgt.Cells(keyCell.Row, retCol)
-        .Validation.Delete
-        .ClearContents
-    End With
-
-    Dim h
-    For Each h In extraClearHeaders
-        Dim ec As Long: ec = GetColByHeader(wsTgt, CStr(h))
-        If ec > 0 Then
-            With wsTgt.Cells(keyCell.Row, ec)
-                .Validation.Delete
-                .ClearContents
-            End With
-        End If
-    Next h
-
-    '--- build list if parent key not blank ----------------
-    Dim keyVal As String: keyVal = LCase(Trim(keyCell.Value))
-    If keyVal = "" Then Exit Sub
-
-    Dim lastRow As Long
-    lastRow = lkSheet.Cells(lkSheet.Rows.Count, keyColLk).End(xlUp).Row
-
-    Dim arr, i As Long, listStr As String
-    arr = lkSheet.Range(lkSheet.Cells(2, keyColLk), lkSheet.Cells(lastRow, valColLk)).Value
-
-    For i = 1 To UBound(arr, 1)
-        If LCase(Trim(arr(i, 1))) = keyVal Then
-            listStr = listStr & arr(i, 2) & ","
-        End If
-    Next i
-
-    If listStr <> "" Then
-        listStr = Left(listStr, Len(listStr) - 1)   'drop trailing comma
-        With wsTgt.Cells(keyCell.Row, retCol).Validation
-            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
-                 Operator:=xlBetween, Formula1:=listStr
-            .InCellDropdown = True
-        End With
+        For Each r In Intersect(Target, ws.Columns(col))
+            If r.Row > 1 Then
+                If Trim(r.Value) <> "" Then
+                    If Not regEx.Test(Trim(r.Value)) Then
+                        MsgBox "Row " & r.Row & ": " & msg, vbExclamation, "Invalid Entry"
+                        Application.EnableEvents = False
+                        r.ClearContents
+                        Application.EnableEvents = True
+                    End If
+                End If
+            End If
+        Next r
     End If
 End Sub
+
+'------------------------------------------------------------
+' Helper: Set dynamic dropdown based on lookup
+'------------------------------------------------------------
+Sub SetDynamicDropdown(ws As Worksheet, Target As Range, _
+    triggerCol As Long, targetCol As Long, _
+    lookupSheet As Worksheet, lookupKeyColName As String, _
+    lookupValColName1 As String, lookupValColName2 As String, _
+    matchOnCol1 As Boolean)
+
+    Dim r As Range, key$, list$, lastRow As Long, i As Long
+    Dim keyColNum As Long, valColNum1 As Long, valColNum2 As Long
+    If triggerCol = 0 Or targetCol = 0 Then Exit Sub
+
+    ' Get actual column numbers for lookup columns based on header names
+    keyColNum = GetColByHeader(lookupSheet, lookupKeyColName)
+    valColNum1 = GetColByHeader(lookupSheet, lookupValColName1)
+    valColNum2 = GetColByHeader(lookupSheet, lookupValColName2)
+
+    If keyColNum = 0 Or valColNum1 = 0 Or valColNum2 = 0 Then Exit Sub
+
+    If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
+        For Each r In Intersect(Target, ws.Columns(triggerCol))
+            If r.Row > 1 Then
+                key = Trim(r.Value)
+                With ws.Cells(r.Row, targetCol)
+                    .Validation.Delete
+                    .ClearContents
+                End With
+                If key <> "" Then
+                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, keyColNum).End(xlUp).Row
+                    list = ""
+                    For i = 2 To lastRow
+                        Dim kVal As String, v1 As String, v2 As String
+                        kVal = Trim(lookupSheet.Cells(i, keyColNum).Value)
+                        v1 = Trim(lookupSheet.Cells(i, valColNum1).Value)
+                        v2 = Trim(lookupSheet.Cells(i, valColNum2).Value)
+
+                        If matchOnCol1 Then
+                            If StrComp(kVal, key, vbTextCompare) = 0 Then
+                                list = list & v2 & ","
+                            End If
+                        Else
+                            If StrComp(v2, key, vbTextCompare) = 0 Then
+                                list = list & v1 & ","
+                            End If
+                        End If
+                    Next i
+                    If list <> "" Then
+                        list = Left(list, Len(list) - 1)
+                        With ws.Cells(r.Row, targetCol).Validation
+                            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+                                 Operator:=xlBetween, Formula1:=list
+                            .InCellDropdown = True
+                        End With
+                    End If
+                End If
+            End If
+        Next r
+    End If
+End Sub
+
+'------------------------------------------------------------
+' Helper: Set dropdown for Sector and Focal Point
+'------------------------------------------------------------
+
+Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
+    triggerCol As Long, targetCol As Long, _
+    lookupSheet As Worksheet, filterColName As String, resultColName As String, _
+    helperSheetName As String, helperStartCell As String)
+
+    Dim r As Range, key As String
+    Dim filterCol As Long, resultCol As Long
+    Dim lastRow As Long, i As Long
+    Dim helperWS As Worksheet
+    Dim outputRow As Long
+    Dim helperStartRow As Long, helperStartCol As Long
+    Dim baseRowOffset As Long, currentHelperStartRow As Long
+    Dim maxItemsPerList As Long
+
+    filterCol = GetColByHeader(lookupSheet, filterColName)
+    resultCol = GetColByHeader(lookupSheet, resultColName)
+    If filterCol = 0 Or resultCol = 0 Then Exit Sub
+
+    On Error Resume Next
+    Set helperWS = ThisWorkbook.Sheets(helperSheetName)
+    On Error GoTo 0
+    If helperWS Is Nothing Then
+        MsgBox "Helper sheet '" & helperSheetName & "' not found.", vbCritical
+        Exit Sub
+    End If
+
+    ' Parse helper start cell to row and col
+    helperStartRow = helperWS.Range(helperStartCell).Row
+    helperStartCol = helperWS.Range(helperStartCell).Column
+
+    maxItemsPerList = 50  ' maximum expected filtered items per dropdown
+
+    If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
+        For Each r In Intersect(Target, ws.Columns(triggerCol))
+            If r.Row > 1 Then
+                key = Trim(r.Value)
+
+                ' Calculate unique helper start row for this data validation
+                ' E.g. for row 2: helperStartRow + (2 - 2)*maxItemsPerList = helperStartRow
+                ' for row 3: helperStartRow + (3 - 2)*maxItemsPerList, etc.
+                baseRowOffset = (r.Row - 2) * maxItemsPerList
+                currentHelperStartRow = helperStartRow + baseRowOffset
+
+                ' Clear existing validation and content in target cell
+                With ws.Cells(r.Row, targetCol)
+                    .Validation.Delete
+                    .ClearContents
+                End With
+
+                ' Clear previous helper range for this row
+                helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
+                               helperWS.Cells(currentHelperStartRow + maxItemsPerList - 1, helperStartCol)).ClearContents
+
+                If key <> "" Then
+                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, filterCol).End(xlUp).Row
+                    outputRow = currentHelperStartRow
+
+                    ' Write filtered names to helper sheet column
+                    For i = 2 To lastRow
+                        If StrComp(Trim(lookupSheet.Cells(i, filterCol).Value), key, vbTextCompare) = 0 Then
+                            helperWS.Cells(outputRow, helperStartCol).Value = lookupSheet.Cells(i, resultCol).Value
+                            outputRow = outputRow + 1
+                        End If
+                    Next i
+
+                    If outputRow > currentHelperStartRow Then
+                        ' Define the range of the list in helper sheet
+                        Dim listRange As String
+                        listRange = helperWS.Name & "!" & _
+                                    helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
+                                                  helperWS.Cells(outputRow - 1, helperStartCol)).Address(False, False)
+
+                        ' Add validation referring to helper list range
+                        With ws.Cells(r.Row, targetCol).Validation
+                            .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+                                 Operator:=xlBetween, Formula1:="=" & listRange
+                            .InCellDropdown = True
+                        End With
+                    End If
+                End If
+            End If
+        Next r
+    End If
+End Sub
+
+
 
 '------------------------------------------------------------
 ' Main worksheet event
 '------------------------------------------------------------
 Private Sub Worksheet_Change(ByVal Target As Range)
     Dim ws As Worksheet:      Set ws = Me
-    Dim wsCat As Worksheet:   Set wsCat   = Sheets("Categories")
-    Dim wsAssist As Worksheet:Set wsAssist= Sheets("Assistance Type")
-    Dim wsBreach As Worksheet:Set wsBreach= Sheets("Breaches")
-    Dim wsNeg As Worksheet:   Set wsNeg   = Sheets("Negative")
-    Dim wsGov As Worksheet:   Set wsGov   = Sheets("Governorates")
-    Dim wsSetGaza As Worksheet:Set wsSetGaza = Sheets("settlements_gaza")
+    Dim wsCat As Worksheet:   Set wsCat = ThisWorkbook.Sheets("Categories")
+    Dim wsAssist As Worksheet: Set wsAssist = ThisWorkbook.Sheets("Assistance Type")
+    Dim wsFeedback As Worksheet: Set wsFeedback = ThisWorkbook.Sheets("Feedback")
+    Dim wsBreach As Worksheet: Set wsBreach = ThisWorkbook.Sheets("Breaches")
+    Dim wsNeg As Worksheet:   Set wsNeg = ThisWorkbook.Sheets("Negative")
+    Dim wsSubCat As Worksheet:   Set wsSubCat = ThisWorkbook.Sheets("sub_categories")
 
-    Application.EnableEvents = False   'prevent recursion
+    Dim wsGov As Worksheet:   Set wsGov = ThisWorkbook.Sheets("Governorates")
+    Dim wsSetGaza As Worksheet:   Set wsSetGaza = ThisWorkbook.Sheets("settlements_gaza")
+    Dim wsFocal As Worksheet: Set wsFocal = ThisWorkbook.Sheets("focal_point")
+
+    Application.EnableEvents = False     'prevent recursion
+
 
     '-- two-way label ? name syncing ------------------------
     Call SyncPair(Target, ws, "select_categories", "categories", wsCat, "label", "name")
@@ -144,50 +263,58 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Call SyncPair(Target, ws, "select_assistance", "assistance_types", wsAssist, "label", "name")
     Call SyncPair(Target, ws, "assistance_types", "select_assistance", wsAssist, "name", "label")
 
+    Call SyncPair(Target, ws, "select_feedback", "feedback", wsFeedback, "label", "name")
+    Call SyncPair(Target, ws, "feedback", "select_feedback", wsFeedback, "name", "label")
+
     Call SyncPair(Target, ws, "select_breaches", "Breaches", wsBreach, "label", "name")
     Call SyncPair(Target, ws, "Breaches", "select_breaches", wsBreach, "name", "label")
 
     Call SyncPair(Target, ws, "select_negative", "Negative", wsNeg, "label", "name")
     Call SyncPair(Target, ws, "Negative", "select_negative", wsNeg, "name", "label")
 
+    Call SyncPair(Target, ws, "select_sub_categories", "sub_categories", wsSubCat, "label", "name")
+    Call SyncPair(Target, ws, "sub_categories", "select_sub_categories", wsSubCat, "name", "label")
+
     '-- locate key columns once ----------------------------
-    Dim colWhere As Long, colGov As Long, colSetGaza As Long
-    colWhere    = GetColByHeader(ws, "where")           'AD
-    colGov      = GetColByHeader(ws, "governorate")     'AE
-    colSetGaza  = GetColByHeader(ws, "settlement_gaza") 'AF
+    Dim colWhere&, colGov&, colSetGaza&, colSector&, colFocalPoint&
+    colWhere = GetColByHeader(ws, "where")
+    colGov = GetColByHeader(ws, "governorate")
+    colSetGaza = GetColByHeader(ws, "settlement_gaza")
+    colSector = GetColByHeader(ws, "Sector")
+    colFocalPoint = GetColByHeader(ws, "Focal Point")
 
-    '––– Governorate dropdown (parent = where) ––––––––––––
-    If colWhere > 0 Then
-        Dim rngWhere As Range
-        Set rngWhere = Intersect(Target, ws.Columns(colWhere))
-        If Not rngWhere Is Nothing Then
-            Dim cell As Range
-            For Each cell In rngWhere
-                Call SetDynamicDropdown (ws, cell, _
-                    "governorate", _
-                    wsGov, _
-                    "location", _
-                    "Governorate", _
-                    "settlement_gaza" )     'extra column to clear
-            Next cell
+    '–––––––– Governorate dropdown driven by “where” ––––––
+    Call SetDynamicDropdown(ws, Target, colWhere, colGov, wsGov, "location", "location", "name", True)
+
+    ' Clear settlement_gaza as well when "where" changes
+    If colWhere > 0 And colSetGaza > 0 Then
+        Dim r As Range
+        If Not Intersect(Target, ws.Columns(colWhere)) Is Nothing Then
+            For Each r In Intersect(Target, ws.Columns(colWhere))
+                If r.Row > 1 Then
+                    With ws.Cells(r.Row, colSetGaza)
+                        .Validation.Delete
+                        .ClearContents
+                    End With
+                End If
+            Next r
         End If
     End If
 
-    '––– Settlement dropdown (parent = governorate) –––––––
-    If colGov > 0 Then
-        Dim rngGov As Range
-        Set rngGov = Intersect(Target, ws.Columns(colGov))
-        If Not rngGov Is Nothing Then
-            Dim g As Range
-            For Each g In rngGov
-                SetDynamicDropdown ws, g, _
-                    "settlement_gaza", _
-                    wsSetGaza, _
-                    "governorate_value", _
-                    "Title"                 'no extras to clear
-            Next g
-        End If
-    End If
+    '–––––––– Settlement dropdown driven by governorate ––––––
+    Call SetDynamicDropdown(ws, Target, colGov, colSetGaza, wsSetGaza, "governorate_value", "Title", "governorate_value", False)
+
+    '-- NEW: Set dropdown for Focal Point based on Sector
+    Call SetDropdownFromFilteredRange(ws, Target, colSector, colFocalPoint, wsFocal, "Sector", "Focal Point", "Helper", "A1")
+
+
+    '–––––––– Regex validate "What_is_your_ID" ––––––––
+    Call ValidateColumnWithRegex(ws, Target, "What_is_your_ID", "^\d{9}$", "'What_is_your_ID' must be exactly 9 digits.")
+    
+    '–––––––– Regex validate "What_is_your_phone_number" ––––––––
+    Call ValidateColumnWithRegex(ws, Target, "What_is_your_phone_number", "^\d{10}$", "'What_is_your_phone_number' must be exactly 10 digits.")
 
     Application.EnableEvents = True
 End Sub
+
+
