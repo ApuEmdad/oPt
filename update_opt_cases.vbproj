@@ -180,7 +180,32 @@ Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
     helperStartRow = helperWS.Range(helperStartCell).Row
     helperStartCol = helperWS.Range(helperStartCell).Column
 
-    maxItemsPerList = 50  ' maximum expected filtered items per dropdown
+    ' maxItemsPerList = 20  ' maximum expected filtered items per dropdown
+
+    ' Dynamically compute maxItemsPerList from focal_point sheet
+    Dim counts As Object
+    Set counts = CreateObject("Scripting.Dictionary")
+    
+    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, filterCol).End(xlUp).Row
+    For i = 2 To lastRow
+        Dim sectorKey As Variant
+        sectorKey = Trim(lookupSheet.Cells(i, filterCol).Value)
+        If sectorKey <> "" Then
+            If Not counts.exists(sectorKey) Then
+                counts(sectorKey) = 1
+            Else
+                counts(sectorKey) = counts(sectorKey) + 1
+            End If
+        End If
+    Next i
+    
+    maxItemsPerList = 1
+    For Each sectorKey In counts.Keys
+        If counts(sectorKey) > maxItemsPerList Then
+            maxItemsPerList = counts(sectorKey)
+        End If
+    Next
+
 
     If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
         For Each r In Intersect(Target, ws.Columns(triggerCol))
