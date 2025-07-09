@@ -300,6 +300,8 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Call SyncPair(Target, ws, "select_sub_categories", "sub_categories", wsSubCat, "label", "name")
     Call SyncPair(Target, ws, "sub_categories", "select_sub_categories", wsSubCat, "name", "label")
 
+    Call SyncPair(Target, ws, "Focal Point", "Focal_Point_Email", wsFocal, "Focal Point", "focal_point_email")
+
     '-- locate key columns once ----------------------------
     Dim colWhere&, colGov&, colSetGaza&, colSector&, colFocalPoint&
     colWhere = GetColByHeader(ws, "where")
