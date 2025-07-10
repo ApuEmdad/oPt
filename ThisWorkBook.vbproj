@@ -1,4 +1,11 @@
 Option Explicit
+Sub UnlockColumnExceptHeader(ws As Worksheet, colNum As Long)
+    ' Unlock entire column
+    ws.Columns(colNum).Locked = False
+    ' Lock the header cell in row 1
+    ws.Cells(1, colNum).Locked = True
+End Sub
+
 
 Private Sub Workbook_Open()
     Dim ws As Worksheet
@@ -16,7 +23,7 @@ Private Sub Workbook_Open()
     ' Get column number
     colStatus = GetColByHeader(ws, "Status")
     
+    Call UnlockColumnExceptHeader(ws, colStatus)
 
-    ws.Columns(colStatus).Locked = False
    
 End Sub
