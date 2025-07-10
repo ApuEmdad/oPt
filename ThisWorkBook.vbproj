@@ -1,19 +1,22 @@
+Option Explicit
+
 Private Sub Workbook_Open()
-    ' This macro runs automatically when the workbook is opened
-
     Dim ws As Worksheet
-    Set ws = ThisWorkbook.Sheets("Update oPt Cases") ' Sheet where ID column lives
+    Dim colStatus As Long
+    
+    ' Set target sheet
+    Set ws = ThisWorkbook.Sheets("Update oPt Cases")
 
-    ' Protect the sheet but allow VBA and Power Automate to write
+    ' Protect the sheet but allow VBA/Power Automate to write
     ws.Protect Password:="admin", UserInterfaceOnly:=True
 
-    ' Lock all cells first
+    ' Lock everything first
     ws.Cells.Locked = True
 
+    ' Get column number
+    colStatus = GetColByHeader(ws, "Status")
+    
 
-    ' Unlock the cells in the Status column (H) so users can edit them
-    ws.Columns("H").Locked = False
-
-    ' (Optional) Unlock other columns if needed, e.g., Title
-    ' ws.Columns("B").Locked = False
+    ws.Columns(colStatus).Locked = False
+   
 End Sub

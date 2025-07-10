@@ -1,0 +1,15 @@
+Option Explicit
+
+'------------------------------------------------------------
+' Helper: return column number for a given header (row 1)
+'------------------------------------------------------------
+Function GetColByHeader(ws As Worksheet, headerName As String) As Long
+    Dim c As Range
+    For Each c In ws.Rows(1).Cells
+        If Trim(LCase(c.Value)) = LCase(headerName) Then
+            GetColByHeader = c.Column
+            Exit Function
+        End If
+    Next c
+    GetColByHeader = 0                 'not found
+End Function
