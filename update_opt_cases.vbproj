@@ -282,8 +282,8 @@ Private Sub Worksheet_Change(ByVal Target As Range)
     Call SyncPair(Target, ws, "select_categories", "categories", wsCat, "label", "name")
     Call SyncPair(Target, ws, "categories", "select_categories", wsCat, "name", "label")
 
-    Call SyncPair(Target, ws, "select_assistance", "assistance_types", wsAssist, "label", "name")
-    Call SyncPair(Target, ws, "assistance_types", "select_assistance", wsAssist, "name", "label")
+    ' Call SyncPair(Target, ws, "select_assistance", "assistance_types", wsAssist, "label", "name")
+    ' Call SyncPair(Target, ws, "assistance_types", "select_assistance", wsAssist, "name", "label")
 
     Call SyncPair(Target, ws, "select_feedback", "feedback", wsFeedback, "label", "name")
     Call SyncPair(Target, ws, "feedback", "select_feedback", wsFeedback, "name", "label")
