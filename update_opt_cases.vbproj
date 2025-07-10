@@ -150,10 +150,12 @@ Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
     Dim baseRowOffset As Long, currentHelperStartRow As Long
     Dim maxItemsPerList As Long
 
+    ' Get column positions from header names
     filterCol = GetColByHeader(lookupSheet, filterColName)
     resultCol = GetColByHeader(lookupSheet, resultColName)
     If filterCol = 0 Or resultCol = 0 Then Exit Sub
 
+    ' Get helper sheet
     On Error Resume Next
     Set helperWS = ThisWorkbook.Sheets(helperSheetName)
     On Error GoTo 0
@@ -162,13 +164,11 @@ Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
         Exit Sub
     End If
 
-    ' Parse helper start cell to row and col
+    ' Parse helper start cell
     helperStartRow = helperWS.Range(helperStartCell).Row
     helperStartCol = helperWS.Range(helperStartCell).Column
 
-    ' maxItemsPerList = 20  ' maximum expected filtered items per dropdown
-
-    ' Dynamically compute maxItemsPerList from focal_point sheet
+    ' Calculate max items per group for dropdown sizing
     Dim counts As Object
     Set counts = CreateObject("Scripting.Dictionary")
     
@@ -184,7 +184,7 @@ Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
             End If
         End If
     Next i
-    
+
     maxItemsPerList = 1
     For Each sectorKey In counts.Keys
         If counts(sectorKey) > maxItemsPerList Then
@@ -192,33 +192,29 @@ Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
         End If
     Next
 
-
+    ' Only act if the Target intersects the trigger column
     If Not Intersect(Target, ws.Columns(triggerCol)) Is Nothing Then
         For Each r In Intersect(Target, ws.Columns(triggerCol))
             If r.Row > 1 Then
                 key = Trim(r.Value)
 
-                ' Calculate unique helper start row for this data validation
-                ' E.g. for row 2: helperStartRow + (2 - 2)*maxItemsPerList = helperStartRow
-                ' for row 3: helperStartRow + (3 - 2)*maxItemsPerList, etc.
                 baseRowOffset = (r.Row - 2) * maxItemsPerList
                 currentHelperStartRow = helperStartRow + baseRowOffset
 
-                ' Clear existing validation and content in target cell
+                ' Clear old validation/content
                 With ws.Cells(r.Row, targetCol)
                     .Validation.Delete
                     .ClearContents
                 End With
 
-                ' Clear previous helper range for this row
+                ' Clear helper cells
                 helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
                                helperWS.Cells(currentHelperStartRow + maxItemsPerList - 1, helperStartCol)).ClearContents
 
                 If key <> "" Then
-                    lastRow = lookupSheet.Cells(lookupSheet.Rows.Count, filterCol).End(xlUp).Row
                     outputRow = currentHelperStartRow
 
-                    ' Write filtered names to helper sheet column
+                    ' Write filtered result values to helper sheet
                     For i = 2 To lastRow
                         If StrComp(Trim(lookupSheet.Cells(i, filterCol).Value), key, vbTextCompare) = 0 Then
                             helperWS.Cells(outputRow, helperStartCol).Value = lookupSheet.Cells(i, resultCol).Value
@@ -226,19 +222,34 @@ Sub SetDropdownFromFilteredRange(ws As Worksheet, Target As Range, _
                         End If
                     Next i
 
+                    ' Only apply validation if results were written
                     If outputRow > currentHelperStartRow Then
-                        ' Define the range of the list in helper sheet
                         Dim listRange As String
-                        listRange = helperWS.Name & "!" & _
-                                    helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
-                                                  helperWS.Cells(outputRow - 1, helperStartCol)).Address(False, False)
+                        Dim formulaStr As String
 
-                        ' Add validation referring to helper list range
+                        ' Use absolute address with single quotes for sheet name
+                        listRange = helperWS.Range(helperWS.Cells(currentHelperStartRow, helperStartCol), _
+                                                  helperWS.Cells(outputRow - 1, helperStartCol)).Address(True, True)
+
+                        ' Build formula with INDIRECT and sheet name in quotes
+                        formulaStr = "=INDIRECT(""'"" & """ & helperWS.Name & """ & ""'!"" & """ & listRange & """)"
+
+                        ' Unprotect sheet before setting validation
+                        ws.Unprotect Password:="admin"
+
+                        ' Clear existing validation again (safe)
+                        ws.Cells(r.Row, targetCol).Validation.Delete
+
+                        ' Add new validation
                         With ws.Cells(r.Row, targetCol).Validation
                             .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
-                                 Operator:=xlBetween, Formula1:="=" & listRange
+                                 Operator:=xlBetween, Formula1:=formulaStr
                             .InCellDropdown = True
+                            .ShowError = False
                         End With
+
+                        ' Protect sheet back
+                        ws.Protect Password:="admin", UserInterfaceOnly:=True
                     End If
                 End If
             End If

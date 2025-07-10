@@ -1,4 +1,5 @@
 Option Explicit
+
 Sub UnlockColumnExceptHeader(ws As Worksheet, colNum As Long)
     ' Unlock entire column
     ws.Columns(colNum).Locked = False
@@ -6,24 +7,29 @@ Sub UnlockColumnExceptHeader(ws As Worksheet, colNum As Long)
     ws.Cells(1, colNum).Locked = True
 End Sub
 
-
 Private Sub Workbook_Open()
-    Dim ws As Worksheet
-    Dim colStatus As Long
-    
-    ' Set target sheet
-    Set ws = ThisWorkbook.Sheets("Update oPt Cases")
+    Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("Update oPt Cases")
+    Dim colStatus As Long: colStatus = GetColByHeader(ws, "Status")
+    Dim colSector As Long: colSector = GetColByHeader(ws, "Sector")
+    Dim colFP As Long: colFP = GetColByHeader(ws, "Focal Point")
+    Dim colFE As Long: colFE = GetColByHeader(ws, "Focal_Point_Email")
 
-    ' Protect the sheet but allow VBA/Power Automate to write
-    ws.Protect Password:="admin", UserInterfaceOnly:=True
+    ' ?? Unprotect the sheet first to allow locking changes
+    On Error Resume Next
+    ws.Unprotect Password:="admin"
+    On Error GoTo 0
 
     ' Lock everything first
     ws.Cells.Locked = True
 
-    ' Get column number
-    colStatus = GetColByHeader(ws, "Status")
-    
+    ' Unlock editable columns (excluding header)
     Call UnlockColumnExceptHeader(ws, colStatus)
+    Call UnlockColumnExceptHeader(ws, colSector)
+    Call UnlockColumnExceptHeader(ws, colFP)
+    Call UnlockColumnExceptHeader(ws, colFE)
 
-   
+    ' ? Now protect the sheet again (VBA/write allowed)
+    ws.Protect Password:="admin", UserInterfaceOnly:=True
 End Sub
+
+
